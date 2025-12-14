@@ -3,18 +3,22 @@
 ## Project Structure
 
 - `docs/`: Challenge brief and design notes (start here).
-- `job_box/`: Place job descriptions (currently empty; see `docs/IMPLEMENTATION_PLAN.md` for the intended `data/` layout).
-- `resume_box/`: Place candidate CVs/resumes (currently Markdown examples).
+- `main.py`: CLI entry point for the JD↔CV evaluator.
+- `jd_resume_evaluator/`: Small modules (input prep, prompting, engines, schema validation).
+- `job_box/`: Job descriptions (Markdown).
+- `resume_box/`: Candidate CVs/resumes (Markdown).
+- `outputs/`: Generated evaluation results (timestamped; gitignored).
 - `.venv/`: Local Python virtual environment (ignored by Git via `.gitignore`).
 
-If you implement the prototype described in `docs/IMPLEMENTATION_PLAN.md`, keep the repo tidy by using the proposed layout (e.g., `main.py`, `data/`, `outputs/`) and documenting any deviations.
+Primary design doc: `docs/jd_resume_evaluator_implementation.md`.
 
 ## Setup, Run, and Common Commands
 
 - Create venv: `python3 -m venv .venv`
 - Activate (bash/zsh): `source .venv/bin/activate`
-- Install deps (once `requirements.txt` exists): `python -m pip install -r requirements.txt`
-- Run entrypoint (once implemented): `python main.py --job <path> --cv <path>`
+- Install deps (once `requirements.txt` exists): `python3 -m pip install -r requirements.txt`
+- Run entrypoint: `python3 main.py --job <path> --cv <path> --engine mock`
+- Preview input budgets/truncation (no model calls): `python3 main.py --job <path> --cv <path> --dry-run`
 
 Keep generated outputs out of version control unless they are fixtures/examples.
 

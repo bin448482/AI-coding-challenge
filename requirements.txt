@@ -1,0 +1,2 @@
+# This prototype runs without third-party dependencies (stdlib only).
+# Keep this file for future extensions (e.g., langchain, pytest, ruff).

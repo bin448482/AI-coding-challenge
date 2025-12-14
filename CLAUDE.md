@@ -4,40 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an **AI Coding Challenge** to build a prototype that screens candidates against job descriptions. The goal is to produce a short screening summary that helps hiring managers understand candidate fit, key risks, and interview focus areas.
+This is an **AI Coding Challenge** prototype that evaluates the fit between a Job Description (JD) and a Candidate CV/Resume, producing a strict JSON screening report for a hiring manager (fit, risks/unknowns, and interview focus areas).
 
 **Timebox:** 30 minutes total for implementation.
 
 **Key files:**
 - `docs/AI_Coding_Challenge_First_Principles_Engineer.md` — Challenge brief and evaluation criteria
 - `AGENTS.md` — Repository guidelines for coding style, testing, and Git practices
-- `job_box/` — Place job descriptions here (currently empty)
-- `resume_box/` — Place candidate CVs/resumes here (Markdown examples provided)
+- `docs/jd_resume_evaluator_implementation.md` — Implementation notes (schema, prompt rules, input budgets)
+- `main.py` — CLI entry point
+- `jd_resume_evaluator/` — Implementation modules
+- `job_box/` — Job descriptions (Markdown)
+- `resume_box/` — Candidate CVs/resumes (Markdown)
+- `outputs/` — Generated reports (timestamped; gitignored)
 
 ## Architecture & Design Approach
 
-The prototype should:
+The implementation is intentionally small and auditable:
 
-1. **Accept two inputs:** Job description and candidate CV
-2. **Output a screening summary** (JSON or Markdown) containing:
-   - Brief candidate summary
-   - Strengths vs job requirements
-   - Potential risks or gaps
-   - Suggested interview questions
+1. `main.py` reads `--job` and `--cv`, prepares inputs with explicit size budgets, then calls an evaluation engine.
+2. Engines:
+   - `mock` (offline): deterministic rule-based report (useful for quick iteration and CI-like sanity checks).
+   - `openai` (network): OpenAI-compatible `POST /v1/chat/completions` using strict JSON-only prompting.
+3. Output is always strict JSON with schema validation before writing `report.json`.
 
-**Design principles:**
-- Minimal viable prototype (30-minute scope)
-- Use Claude or another LLM API for analysis (mocking is acceptable)
-- Single-purpose, clear data flow
-- Avoid over-engineering; focus on core logic
+Core modules:
+- `jd_resume_evaluator/text_prep.py`: normalization + input budgets + outline extraction + truncation metadata
+- `jd_resume_evaluator/prompting.py`: JSON-only prompts + schema scaffold + truncation hints
+- `jd_resume_evaluator/engines.py`: `mock` and `openai` implementations
+- `jd_resume_evaluator/json_parse.py`: best-effort JSON object extraction
+- `jd_resume_evaluator/report.py`: schema validation + dataclasses
 
-**Suggested structure (from AGENTS.md):**
-```
-main.py              # Entry point
-data/                # Input JDs and CVs (if needed)
-outputs/             # Generated screening summaries
-requirements.txt     # Python dependencies
-```
+Design principles:
+- Evidence-backed claims (each strength/gap must include quotes copied verbatim from the provided text)
+- Strictly machine-parseable output (JSON only)
+- Input boundary guardrails to avoid context overflow and degraded reasoning
 
 ## Common Commands
 
@@ -45,12 +46,17 @@ requirements.txt     # Python dependencies
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate      # On Windows: .venv\Scripts\activate
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 ### Run the prototype
 ```bash
-python main.py --job <job_path> --cv <cv_path>
+python3 main.py --job <job_path> --cv <cv_path> --engine mock
+```
+
+### Preview prompt/input size (no model calls)
+```bash
+python3 main.py --job <job_path> --cv <cv_path> --dry-run
 ```
 
 ### Testing (when implemented)
@@ -60,13 +66,24 @@ pytest -q
 
 ## Environment & Configuration
 
-**API Configuration:** Uses environment variables from `.env`:
-- `OPENAI_API_KEY` — Your API key
-- `OPENAI_BASE_URL` — API endpoint
-- `OPENAI_MODEL` — Model name (e.g., gpt-5.1)
-- `TEMPERATURE` — LLM parameter for response variability
+For the `openai` engine (network required), configure:
+- `OPENAI_API_KEY` — API key
+- `OPENAI_BASE_URL` — optional (defaults to `https://api.openai.com/v1`)
 
 **Important:** `.env` is in `.gitignore`. Never commit secrets; update `.env.example` when introducing new variables.
+
+## Input Boundary Strategy (Why it exists)
+
+JD/CV inputs can be arbitrarily large. Overly large prompts cause:
+- API errors (context overflow) or severe output degradation
+- higher chance of non-JSON outputs and weaker evidence quoting
+
+This repo uses **character budgets + explainable truncation**:
+- `--max-jd-chars`, `--max-cv-chars`, `--max-prompt-chars`
+- If over budget, optionally extract Markdown headings/bullets first (`--outline-if-needed`, default on)
+- Always write `outputs/.../input_meta.json` containing original/used sizes and truncation notes
+
+If any truncation happens, engines should include a `risk_flag` indicating the assessment may miss evidence outside the included excerpts.
 
 ## Coding Standards
 
@@ -76,18 +93,6 @@ pytest -q
 - **Type hints:** Required for public functions and dataclasses
 - **File naming:** `snake_case.py` for modules; `kebab-case` for CLI arguments
 - **Formatters/linters:** Prefer `ruff` + `black` if adding them
-
-**Example dataclass:**
-```python
-from dataclasses import dataclass
-
-@dataclass
-class ScreeningSummary:
-    candidate_summary: str
-    strengths: list[str]
-    risks: list[str]
-    interview_questions: list[str]
-```
 
 ## Testing Guidelines
 
@@ -109,11 +114,10 @@ From AGENTS.md:
 
 When implementing, make deliberate choices about:
 
-1. **LLM Integration:** Real API calls vs mock responses?
-2. **Input Format:** File paths, JSON, or direct string input?
-3. **Output Format:** JSON, Markdown, or HTML?
-4. **Scope:** MVP with core screening logic, or extended analysis (e.g., skills match scoring)?
-5. **Error Handling:** Minimal validation vs comprehensive checks?
+1. **Engine behavior:** keep `mock` deterministic; keep `openai` strict JSON-only.
+2. **Budgeting:** char budgets vs token-aware budgeting (if adding token counting, document the dependency and failure modes).
+3. **Evidence policy:** never claim beyond the included text; prefer follow-up questions when uncertain.
+4. **Schema evolution:** change output fields carefully (it is intended for automation).
 
 Document these decisions in the code or a short README if they affect usage.
 
@@ -123,7 +127,8 @@ Document these decisions in the code or a short README if they affect usage.
 |------|---------|
 | Activate venv | `source .venv/bin/activate` |
 | Install deps | `pip install -r requirements.txt` |
-| Run prototype | `python main.py --job <job> --cv <cv>` |
+| Run (mock) | `python3 main.py --job <job> --cv <cv> --engine mock` |
+| Dry-run budgets | `python3 main.py --job <job> --cv <cv> --dry-run` |
 | Run tests | `pytest -q` |
 | Format code | `black .` (if added) |
 | Lint | `ruff check .` (if added) |
