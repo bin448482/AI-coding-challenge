@@ -1,62 +1,62 @@
 # JD × Resume Evaluator (Evidence-Based Screening Report)
-一个小而可审计的 JD↔CV 匹配评估器：在可控输入预算下生成**严格 JSON** 的筛选报告，适合做自动化对比与人工复核。
+A small, auditable JD↔CV matching evaluator: generates **strict JSON** screening reports under a controlled input budget, suitable for automated comparison and human review.
 
-## 面试补充说明：关于 30 分钟时间限制
-在面试视频中提到的「30 分钟完成」对我来说偏紧张：即便使用 AI 辅助编程，我也不会只把 AI 当作写代码工具，而是会把它纳入完整的软件工程流程（需求澄清、方案设计、方案审核、测试用例设计与审核、代码实现、代码审核、验收与文档维护）。实践中，我还经常采用“交叉审核”的方式：例如用 Claude 侧重发散设计方案（更容易给出意料之外的点子），再由我结合 GPT 做逻辑一致性与可落地性审核，并根据真实需求进行取舍。由于模型思考与多轮对话本身需要时间，一个来回往往就会消耗约 6–7 分钟；再叠加阅读、理解与人工审核，几轮迭代就可能超过 30 分钟。
+## Interview note: about the 30-minute time limit
+The “finish in 30 minutes” constraint mentioned in the interview video felt tight to me. Even when using AI-assisted programming, I don’t treat AI as just a code-writing tool; I integrate it into a full software engineering workflow (requirements clarification, solution design, solution review, test-case design and review, implementation, code review, acceptance, and documentation maintenance). In practice, I also often use a “cross-review” approach: for example, use Claude to explore alternative designs (it tends to surface unexpected ideas), then combine that with GPT for consistency and feasibility checks, and make trade-offs based on real needs. Because model reasoning and multi-turn dialog take time, a single round trip often costs ~6–7 minutes; once you add reading, understanding, and human review, a few iterations can easily exceed 30 minutes.
 
-另外，视频中我确实出现了几处小疏漏/小错误；这也与时间压力有关。由于明确被要求在 30 分钟内完成，我在制定实施计划时会刻意把“30 分钟内可交付”作为首要约束，优先选择更稳妥、可快速落地的方案，而不是在设计与验证上做更充分的展开。
+Also, I did make a few small omissions/mistakes in the video, which I attribute to time pressure. Since the requirement was explicitly to complete it within 30 minutes, I treated “deliverable within 30 minutes” as the primary constraint when planning, and prioritized safer, faster-to-implement approaches over deeper design and validation.
 
-我通常会把开发拆成明确的“产物链路”，并且每一步都尽量做到**可人工审核、可复盘**：
-- 需求分析 → 需求审核（定位需要确认/不明确之处）→ 实施文档 → 审核实施文档 → 测试用例文档 → 审核测试用例文档 → 编写代码 → 编写测试用例 → 代码审核 → 功能与需求对齐复核 → 文档完备性检查
+I typically break development into an explicit “artifact chain”, and try to make every step **human-reviewable and post-mortem friendly**:
+- Requirements analysis → requirements review (identify unclear points / items to confirm) → implementation doc → implementation doc review → test-case doc → test-case doc review → code implementation → test writing → code review → functionality vs. requirements alignment check → documentation completeness check
 
-我更关注的是：交付过程中的每一份产物都应可被人工审阅与复盘（不仅是代码，还包括需求/设计/测试用例/验收结论），并且在不依赖 AI 的情况下依然能够继续维护、调试与新增需求。因此我在视频最后补充了文档维护工作，目的也是让后续的 AI 与人都能更快接手并理解本次开发的上下文与取舍。
+What I care about more is that every artifact produced during delivery should be reviewable and traceable (not only code, but also requirements/design/test cases/acceptance conclusions), and that maintenance/debugging/new feature work should remain possible without relying on AI. That’s why I mentioned documentation maintenance at the end of the video: it helps both future humans and AI pick up the context and understand the trade-offs made in this build.
 
 ## Background / Problem
-- JD 与简历筛选经常依赖主观判断，结论难追溯、难复盘（“为什么说匹配/不匹配？”）。
-- 直接把完整 JD+CV 塞给 LLM，常见问题：
-  - 输入过大导致上下文溢出 / 输出退化（非 JSON、字段漂移、引用缺失）。
-  - 证据引用不稳定，出现“看起来合理但无法在文本中定位”的结论。
-- 传统关键词匹配能做粗筛，但很难输出结构化的“风险/追问/证据链”，也难以解释评分依据。
+- Screening JDs and resumes often relies on subjective judgment, making conclusions hard to trace and review (“Why do we think it matches / doesn’t match?”).
+- If you paste the full JD+CV into an LLM, common issues include:
+  - Oversized inputs causing context overflow or degraded outputs (non-JSON, schema drift, missing citations).
+  - Unstable evidence references: conclusions that sound plausible but can’t be located in the text.
+- Traditional keyword matching can do coarse filtering, but struggles to produce structured “risks / follow-ups / evidence chains”, and it’s hard to explain the scoring basis.
 
 ## Solution
-- 以“**证据优先 + 结构化输出**”为核心：每条优势/缺口必须带原文引用（evidence quotes），并产出固定 schema 的 JSON 报告。
-- 以“**输入边界（budget）+ 可解释裁剪**”保障稳定性：对 JD/CV 设定字符预算与总 prompt 预算，超限时先提取 headings/bullets，再做硬截断，并把裁剪信息写入 `input_meta.json`。
-- 关键取舍：
-  - **先保证可解析与可追溯**（严格 JSON + schema 校验）再谈“分析深度”。
-  - 提供 `mock` 引擎用于离线回归与快速迭代；真实 LLM 通过 `openai` 引擎接入（OpenAI 兼容 Chat Completions）。
+- Centered on **evidence-first + structured output**: every strength/gap must include source quotes (evidence quotes), producing a fixed-schema JSON report.
+- Stability via **input budgets + explainable truncation**: enforce character budgets for JD/CV and an overall prompt budget; when over budget, extract headings/bullets first, then hard-truncate, and write truncation metadata to `input_meta.json`.
+- Key trade-offs:
+  - **Parsing and traceability first** (strict JSON + schema validation), then “analysis depth”.
+  - A `mock` engine for offline regression and fast iteration; a real LLM via the `openai` engine (OpenAI-compatible Chat Completions).
 
 ## Architecture
-- 系统整体架构：单进程 CLI 工具，输入两份 Markdown/文本文件，输出时间戳目录下的结构化评估结果。
-- 模块划分：
-  - `main.py`：参数解析、输入准备、调用引擎、schema 校验、落盘输出
-  - `jd_resume_evaluator/text_prep.py`：文本归一化、预算控制、outline 提取、截断与元信息
-  - `jd_resume_evaluator/prompting.py`：JSON-only 提示词、schema scaffold、截断提示注入
-  - `jd_resume_evaluator/engines.py`：`mock`（离线）与 `openai`（网络）引擎
-  - `jd_resume_evaluator/json_parse.py`：从模型输出中提取 JSON object（容错）
-  - `jd_resume_evaluator/report.py`：输出 schema 校验与数据结构
-- 数据流 / 调用链路（文字版）：
-  1) `main.py` 读取 `--job/--cv` → `prepare_inputs()` 做归一化与裁剪 → 得到 `PreparedInputs + meta`
-  2) `evaluate_with_engine()`：
-     - `mock`：基于 JD 关键词与 CV 命中行生成 report dict
-     - `openai`：构造 system/user prompt → `POST /v1/chat/completions` → 解析 JSON object
-  3) `validate_report_dict()` 严格校验 schema → 写入 `outputs/.../report.json` 与 `input_meta.json`
+- Overall architecture: a single-process CLI tool that takes two Markdown/text files and writes structured evaluation outputs into a timestamped directory.
+- Module breakdown:
+  - `main.py`: argument parsing, input prep, engine invocation, schema validation, and writing outputs
+  - `jd_resume_evaluator/text_prep.py`: normalization, budgeting, outline extraction, truncation, and metadata
+  - `jd_resume_evaluator/prompting.py`: JSON-only prompts, schema scaffold, and truncation note injection
+  - `jd_resume_evaluator/engines.py`: `mock` (offline) and `openai` (network) engines
+  - `jd_resume_evaluator/json_parse.py`: tolerant JSON object extraction from model output
+  - `jd_resume_evaluator/report.py`: output schema validation and data structures
+- Data flow / call chain (text version):
+  1) `main.py` reads `--job/--cv` → `prepare_inputs()` normalizes + truncates → returns `PreparedInputs + meta`
+  2) `evaluate_with_engine()`:
+     - `mock`: generate a report dict based on JD keywords and CV matches
+     - `openai`: build system/user prompts → `POST /v1/chat/completions` → parse JSON object
+  3) `validate_report_dict()` strictly validates the schema → write `outputs/.../report.json` and `input_meta.json`
 
 ## Key Features
-- [x] `mock` 引擎（离线可跑通、适合快速回归）
-- [x] `openai` 引擎（OpenAI 兼容 Chat Completions）
-- [x] 严格 JSON 输出 + schema 校验（字段缺失/类型不符直接失败）
-- [x] 输入预算与可解释裁剪（outline 提取 + 截断 + `input_meta.json`）
-- [x] `--dry-run` 预览字符预算与截断情况（不调用模型）
-- [ ] token 级预算（更精确的上下文控制）
-- [ ] 多模型对比运行（同一输入并排对比输出稳定性与一致性）
-- [ ] `pytest` 测试（覆盖裁剪、JSON 提取、schema 校验、mock 稳定性）
-- [ ] 可配置 rubric（YAML/JSON 配置评分维度与权重）
+- [x] `mock` engine (works offline; great for quick regression)
+- [x] `openai` engine (OpenAI-compatible Chat Completions)
+- [x] Strict JSON output + schema validation (missing fields / wrong types fail fast)
+- [x] Input budgets and explainable truncation (outline extraction + truncation + `input_meta.json`)
+- [x] `--dry-run` to preview budgets and truncation (no model calls)
+- [ ] Token-level budgets (more precise context control)
+- [ ] Multi-model comparison runs (compare stability and consistency side-by-side)
+- [ ] `pytest` tests (cover truncation, JSON extraction, schema validation, mock stability)
+- [ ] Configurable rubric (YAML/JSON for scoring dimensions and weights)
 
 ## Tech Stack
 | Category | Choice |
 |---|---|
 | Language | Python 3.12+ |
-| Framework | None（stdlib only） |
+| Framework | None (stdlib only) |
 | Data / Storage | Local filesystem (`outputs/`) |
 | Infra / Cloud | Optional: OpenAI-compatible API (`/v1/chat/completions`) |
 | Other Tools | `venv`, `pip`, JSON schema validation (custom), deterministic mock engine |
@@ -64,7 +64,7 @@
 ## Getting Started
 ### Prerequisites
 - Python 3.12+
-- （可选）可访问的 OpenAI 兼容接口与 API Key（如果使用 `--engine openai`）
+- (Optional) Access to an OpenAI-compatible endpoint and an API key (if using `--engine openai`)
 
 ### Installation
 ```bash
@@ -75,32 +75,32 @@ python3 -m pip install -r requirements.txt
 
 ### Run
 ```bash
-# 离线（推荐先跑通）
+# Offline (recommended first)
 python3 main.py --job job_box/JD_Senior\ AI\ Engineer.md --cv resume_box/Resume_EN_20250529.md --engine mock
 
-# 仅查看输入预算与截断（不调用模型）
+# Preview input budgets/truncation (no model calls)
 python3 main.py --job job_box/JD_Senior\ AI\ Engineer.md --cv resume_box/Resume_EN_20250529.md --dry-run
 ```
 
 ## Configuration
-关键配置项（`openai` 引擎）：
-- `OPENAI_API_KEY`：API key
-- `OPENAI_BASE_URL`：Base URL（默认 `https://api.openai.com/v1`）
+Key configuration (`openai` engine):
+- `OPENAI_API_KEY`: API key
+- `OPENAI_BASE_URL`: Base URL (default: `https://api.openai.com/v1`)
 
-环境变量示例：
+Example environment variables:
 ```bash
 export OPENAI_API_KEY="..."
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
-输入边界相关参数（避免 prompt 过大）：
-- `--max-jd-chars`（默认 60000）
-- `--max-cv-chars`（默认 140000）
-- `--max-prompt-chars`（默认 220000）
-- `--outline-if-needed/--no-outline-if-needed`（默认开启：先抽 headings/bullets 再截断）
+Input budget options (to avoid oversized prompts):
+- `--max-jd-chars` (default 60000)
+- `--max-cv-chars` (default 140000)
+- `--max-prompt-chars` (default 220000)
+- `--outline-if-needed/--no-outline-if-needed` (enabled by default: extract headings/bullets first, then truncate)
 
 ## Usage Example
-示例 1：离线快速评估（用于迭代与回归）
+Example 1: offline quick evaluation (for iteration and regression)
 ```bash
 python3 main.py \
   --job "job_box/JD_Senior AI Engineer.md" \
@@ -108,7 +108,7 @@ python3 main.py \
   --engine mock
 ```
 
-示例 2：真实模型评估（严格 JSON-only）
+Example 2: real model evaluation (strict JSON-only)
 ```bash
 export OPENAI_API_KEY="..."
 python3 main.py \
@@ -119,31 +119,31 @@ python3 main.py \
   --temperature 0
 ```
 
-输出目录结构（每次运行一个时间戳目录）：
-- `outputs/jd_resume_eval/<timestamp>/report.json`：结构化评估结果
-- `outputs/jd_resume_eval/<timestamp>/input_meta.json`：输入大小、是否截断、截断原因
-- `outputs/jd_resume_eval/<timestamp>/raw_output.txt`：模型原始输出（仅在需要排查时写入/保留）
+Output directory structure (one timestamped directory per run):
+- `outputs/jd_resume_eval/<timestamp>/report.json`: structured evaluation report
+- `outputs/jd_resume_eval/<timestamp>/input_meta.json`: input sizes, truncation flags, and reasons
+- `outputs/jd_resume_eval/<timestamp>/raw_output.txt`: raw model output (kept only for debugging)
 
-## Design Highlights（重点）
-- **可追溯性优先**：每条 strength/gap 通过 `evidence_quotes` 绑定原文片段，避免“看起来合理但无法验证”的结论。
-- **严格可解析输出**：JSON-only prompt + `parse_json_object()` 容错提取 + `validate_report_dict()` 严格校验，避免下游自动化被脏输出破坏。
-- **输入边界治理**：
-  - 预算不是“静默截断”，而是“可解释裁剪”：`input_meta.json` 明确记录原始大小、使用大小与裁剪原因。
-  - 默认启用 outline 抽取（headings/bullets），在相同预算下尽量保留结构化信息，减少重要段落被随机截断的概率。
-- **离线基线能力**：`mock` 引擎提供确定性输出，便于快速开发与对照 LLM 输出漂移（工程上比“完全依赖模型”更容易维护）。
+## Design Highlights
+- **Traceability first**: every strength/gap is tied back to source text via `evidence_quotes`, avoiding conclusions that “sound right but can’t be verified”.
+- **Strict, machine-parseable output**: JSON-only prompt + tolerant `parse_json_object()` extraction + strict `validate_report_dict()` validation, preventing downstream automation from breaking on messy outputs.
+- **Input budget management**:
+  - Budgets are not “silent truncation”, but “explainable truncation”: `input_meta.json` records original size, used size, and reasons.
+  - Outline extraction (headings/bullets) is enabled by default to preserve structured signals under the same budget and reduce the chance of randomly truncating critical paragraphs.
+- **Offline baseline**: the `mock` engine provides deterministic outputs for fast development and for comparing against LLM drift (more maintainable than “fully model-dependent” systems).
 
 ## Roadmap
-- [ ] token 级预算与上下文预估（更精确地控制不同模型的上下文窗口）
-- [ ] 多模型并行评估与差异对比（稳定性/一致性/成本权衡）
-- [ ] 两段式链路：事实抽取 → 评分对齐（降低幻觉、提高引用覆盖）
-- [ ] 评分维度与权重配置化（YAML/JSON）
-- [ ] `pytest` 测试套件与基础 CI
+- [ ] Token-level budgets and context estimation (more precise control of each model’s context window)
+- [ ] Multi-model parallel evaluation and diffing (stability/consistency/cost trade-offs)
+- [ ] Two-stage pipeline: fact extraction → scoring alignment (reduce hallucinations, improve citation coverage)
+- [ ] Configurable scoring dimensions and weights (YAML/JSON)
+- [ ] `pytest` test suite and basic CI
 
 ## Status
-- 当前状态：Demo / PoC
-- 适用场景：面试展示、原型验证、评估流程设计讨论
-- 生产使用建议：需要补齐 token 预算、测试覆盖、失败重试策略、以及与业务侧 ATS/HR 系统的集成边界定义
+- Current: Demo / PoC
+- Best for: interview demos, prototyping, and evaluation-process design discussions
+- Production note: would need token budgeting, test coverage, retry/failure handling, and clear integration boundaries with ATS/HR systems
 
 ## Author
-- 角色：Software Engineer / AI Engineer（原型与工程化落地）
-- 项目用途：学习与面试展示（强调可追溯、可解析、可维护的 LLM 工程实践）
+- Role: Software Engineer / AI Engineer (prototype + engineering implementation)
+- Purpose: learning and interview demo (emphasizing traceable, parseable, maintainable LLM engineering practices)
