@@ -1,37 +1,37 @@
-# JD × Resume 匹配评估器（LangChain 多模型可切换）实施文档
+# JD × Resume Matching Evaluator (LangChain Multi-Model Switchable) Implementation Notes
 
-目标：在 **30 分钟内**实现一个最小可用的“岗位 JD 与简历匹配度评估”脚本，并且通过 **LangChain 配置/参数**选择不同 LLM（OpenAI / Zhipu / Ollama）。
+Goal: implement a minimum viable “job JD vs. resume match evaluation” script within **30 minutes**, and switch between different LLMs (OpenAI / Zhipu / Ollama) via **LangChain configuration/parameters**.
 
-## 0. 输入与现状确认
+## 0. Inputs and Current State Check
 
-你提到的输入文件在当前仓库未发现（请确认真实路径或补充到仓库）：
+The input files you mentioned were not found in the current repository (please confirm the real paths or add them to the repo):
 
 - `docs/AI_Coding_Challenge_First_Principles_Engineer.md`
 - `job_box/JD_Senior AI Engineer.md`
 - `resume_box/Resume_EN_20250529.md`
 
-本实施以“输入为两份 Markdown 文本（JD + Resume）”为前提；文件路径存在后即可直接跑通。
+This implementation assumes “two Markdown inputs (JD + Resume)”; once the file paths exist, it should run end-to-end.
 
-## 1. 交付物（最小可用）
+## 1. Deliverables (MVP)
 
-- 新增入口：`main.py`
-  - 读取：`--job <path>` + `--cv <path>`
-  - 选择引擎：`--engine mock|openai`
-  -（LLM 引擎）选择模型：`--model <name>`（OpenAI 兼容 Chat Completions）
-  - 输出：
+- Add entry point: `main.py`
+  - Read: `--job <path>` + `--cv <path>`
+  - Select engine: `--engine mock|openai`
+  - (LLM engine) select model: `--model <name>` (OpenAI-compatible Chat Completions)
+  - Outputs:
     - `outputs/jd_resume_eval/<timestamp>/report.json`
-    - `outputs/jd_resume_eval/<timestamp>/input_meta.json`（包含裁剪/截断说明）
-    -（失败排查）`raw_output.txt`（当模型返回无法解析的内容时）
+    - `outputs/jd_resume_eval/<timestamp>/input_meta.json` (includes truncation/extraction notes)
+    - (Debugging on failure) `raw_output.txt` (when the model returns non-parseable content)
 
-## 2. 关键约束（为避免“编造”与不可追溯）
+## 2. Key Constraints (to Avoid Hallucination and Ensure Traceability)
 
-- 所有结论必须给出 **证据引用**：每条优势/缺口至少包含 1 条来自 JD 或 Resume 的原文摘录。
-- 不允许引入简历/JD 未出现的技术品牌、产品名、指标数字；如需推断，只能用“可能/推测/需要确认”等措辞，并列为 `follow_up_questions`。
-- 输出必须是 **严格 JSON**（解析失败时保底保存原始模型输出到 `raw_output.txt` 便于排查）。
+- Every conclusion must include **evidence**: each strength/gap includes at least one direct quote from the JD or Resume.
+- Do not introduce technology brands, product names, or metrics that do not appear in the JD/resume. If inference is needed, use wording like “may / likely / needs confirmation” and put it into `follow_up_questions`.
+- Output must be **strict JSON** (if parsing fails, save the raw model output to `raw_output.txt` for debugging).
 
-## 3. 输出 Schema（v0）
+## 3. Output Schema (v0)
 
-固定 JSON 结构（字段名固定，便于后续自动化与对比多模型输出）：
+Fixed JSON structure (field names are fixed for automation and multi-model comparison):
 
 ```json
 {
@@ -56,60 +56,60 @@
 }
 ```
 
-说明：
-- `overall_score`：0–100（整数）
-- `score_breakdown.*`：0–100（整数），用于解释总分构成
-- `evidence_quotes`：来自 JD 或 Resume 的短摘录（建议每条 1–3 句）
+Notes:
+- `overall_score`: 0–100 (integer)
+- `score_breakdown.*`: 0–100 (integer), to explain how the overall score is composed
+- `evidence_quotes`: short quotes from the JD or Resume (recommended 1–3 sentences per item)
 
-## 4. 模型/引擎选择（实现策略）
+## 4. Model/Engine Selection (Implementation Strategy)
 
-为了最小可用与可移植性，先实现两种引擎：
+For MVP and portability, implement two engines first:
 
-- `mock`：不依赖外部 API，使用简单规则生成结构化报告（用于本地跑通与回归）
-- `openai`：通过 OpenAI 兼容 `POST /v1/chat/completions` 调用真实模型
+- `mock`: no external APIs; generate structured reports via simple rules (for local runs and regression)
+- `openai`: call a real model via OpenAI-compatible `POST /v1/chat/completions`
 
-LLM 引擎常用环境变量：
+Common environment variables for the LLM engine:
 
 - `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`）
+- `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 
-建议默认：
-- `temperature=0.0`（评估场景更稳定）
+Recommended defaults:
+- `temperature=0.0` (more stable for evaluation use cases)
 
-## 5. Prompt（v0，单次调用完成）
+## 5. Prompt (v0, single-call)
 
 ### System
-- 角色：资深技术招聘官 + 严格证据引用的评估官
-- 强制规则：
-  - 不得臆造技术、产品、数字
-  - 每条结论必须引用原文
-  - 输出必须为严格 JSON（不允许额外文本）
+- Role: senior technical recruiter + evidence-strict evaluator
+- Hard rules:
+  - No hallucinated technologies/products/numbers
+  - Every conclusion must cite source text
+  - Output must be strict JSON (no extra text)
 
 ### User
-包含三段：
-1) JD 原文（完整粘贴）
-2) Resume 原文（完整粘贴）
-3) 输出 Schema 与评分口径（上面的 JSON 字段 + 评分维度解释）
+Contains three parts:
+1) JD full text (paste in full)
+2) Resume full text (paste in full)
+3) Output schema and scoring rubric (the JSON fields above + scoring dimension explanations)
 
-## 6. 执行流程（30 分钟落地）
+## 6. Execution Flow (30-minute delivery)
 
-1) 读取 `--jd/--resume` 文本
-2) `load_runtime_config()`（确保 provider 凭证可用）
-3) `make_chat_model(--model, temperature)`（切换不同 LLM）
-4) 构造 prompt 并调用一次 `llm.invoke(...)`
-5) 解析 JSON：
-   - 成功：写入 `report.json`
-   - 失败：写入 `raw_output.txt` + 返回非 0 exit code
+1) Read the `--jd/--resume` text
+2) `load_runtime_config()` (ensure provider credentials are available)
+3) `make_chat_model(--model, temperature)` (switch between LLMs)
+4) Build the prompt and call `llm.invoke(...)` once
+5) Parse JSON:
+   - Success: write `report.json`
+   - Failure: write `raw_output.txt` and return a non-zero exit code
 
-## 7. 命令与验收
+## 7. Commands and Acceptance
 
-### 准备（一次性）
+### Setup (one-time)
 ```bash
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 ```
 
-### 运行（示例）
+### Run (examples)
 ```bash
 python3 main.py \
   --job "job_box/JD_Senior AI Engineer.md" \
@@ -117,7 +117,7 @@ python3 main.py \
   --engine "mock"
 ```
 
-（可选）真实 LLM：
+(Optional) real LLM:
 ```bash
 export OPENAI_API_KEY="..."
 python3 main.py \
@@ -128,50 +128,50 @@ python3 main.py \
   --temperature 0
 ```
 
-### 验收标准（v0）
-- 生成 `report.json` 且可被 `python -c 'import json; json.load(open(...))'` 解析
-- `strengths/gaps` 中每条均包含 `evidence_quotes`（非空）
-- 至少输出 5 条 `follow_up_questions`（用于面试追问）
+### Acceptance criteria (v0)
+- Generates `report.json` and it can be parsed by `python -c 'import json; json.load(open(...))'`
+- Every item in `strengths/gaps` contains non-empty `evidence_quotes`
+- Outputs at least 5 `follow_up_questions` (for interview follow-ups)
 
-## 8. 风险与快速修复
+## 8. Risks and Quick Fixes
 
-- 模型输出非 JSON：在 prompt 中重复“只输出 JSON”，并在代码侧做一次轻量纠错（例如截取第一个 `{` 到最后一个 `}`）。
-- 证据引用不足：将“每条结论必须含引文”写入 system，并在 schema 校验失败时让模型重试一次（最多 1 次，防止超时）。
-- 不同模型输出字段漂移：对字段做严格校验，缺字段直接判失败并保存 `raw_output.txt`。
+- Model outputs non-JSON: repeat “output JSON only” in the prompt, and do a lightweight correction in code (e.g., slice from the first `{` to the last `}`).
+- Insufficient evidence: put “every conclusion must include quotes” into system, and retry once on schema validation failure (max 1 retry to avoid timeouts).
+- Schema drift across models: strict validation; fail fast on missing fields and save `raw_output.txt`.
 
-## 9. 输入边界（Prompt Size Budget）与裁剪策略
+## 9. Input Budgets (Prompt Size Budget) and Truncation Strategy
 
-现实中 JD/简历可能非常长（尤其包含项目细节、附件、作品集链接列表）。输入过大时会带来两类问题：
+In reality, JDs/resumes can be very long (especially with project details, attachments, or portfolios/links). Oversized inputs cause two classes of problems:
 
-1) **超过模型上下文**：直接报错或输出严重退化
-2) **即使未超上下文**：注意力分散，证据引用质量下降，JSON 结构更容易漂移
+1) **Exceed the model context window**: hard errors or severely degraded output
+2) **Even if within context**: attention becomes diluted, evidence quality drops, and JSON structure is more likely to drift
 
-因此实现上建议引入“预算（budget）+ 可解释裁剪”的机制：
+So the implementation should include “budgets + explainable truncation”:
 
-- `--max-jd-chars`：JD 最大字符数（默认 60,000）
-- `--max-cv-chars`：CV 最大字符数（默认 140,000）
-- `--max-prompt-chars`：Prompt 总预算（默认 220,000，包含 schema/规则等开销）
-- `--outline-if-needed / --no-outline-if-needed`：
-  - 超预算时先提取“标题/要点”（Markdown headings + bullets）作为 **可追溯 excerpt**
-  - 仍超预算再进行硬截断（hard truncate）
+- `--max-jd-chars`: max JD characters (default 60,000)
+- `--max-cv-chars`: max CV characters (default 140,000)
+- `--max-prompt-chars`: total prompt budget (default 220,000, including schema/rules overhead)
+- `--outline-if-needed / --no-outline-if-needed`:
+  - If over budget, first extract “headings/bullets” (Markdown headings + bullets) as a **traceable excerpt**
+  - If still over budget, hard truncate
 
-输出会生成 `input_meta.json`，包含：
+The run will generate `input_meta.json`, including:
 
-- 原始字符数、实际使用字符数
-- 发生过哪些截断/提取
-- prompt 字符数的估算
+- original character counts and used character counts
+- which extraction/truncation steps happened
+- estimated prompt character count
 
-建议的验收点（与输出质量强相关）：
+Suggested acceptance checks (strongly tied to output quality):
 
-- 当出现任何截断/提取时，`risk_flags` 必须明确提示“可能遗漏未包含证据”
-- `evidence_quotes` 必须来自**提供给模型的文本片段**（否则属于不可追溯结论）
+- When any truncation/extraction occurs, `risk_flags` should clearly warn that “some evidence may be missing”
+- `evidence_quotes` must come from **the text actually provided to the model** (otherwise it’s non-traceable)
 
-调试建议：
+Debugging suggestions:
 
-- 先用 `--dry-run` 查看字符数/截断情况，再决定是否需要提高预算或改用两段式链路。
+- Use `--dry-run` first to inspect character counts/truncation, then decide whether to increase budgets or switch to a two-stage pipeline.
 
-## 9. 下一步（超出 30 分钟但建议）
+## 9. Next Steps (beyond 30 minutes, recommended)
 
-- 增加 `--multi-model`：同一份 JD/Resume 用多个模型跑，输出并排对比（便于选择评估模型）
-- 引入两段式链路（抽取事实 → 对齐评分），降低幻觉与漏项
-- 把 rubric/字段定义迁移到一个 YAML 配置（与 `latest_resumes/prompt_config.yaml` 类似），使评估维度可配置
+- Add `--multi-model`: run multiple models on the same JD/resume and compare outputs side-by-side (helps choose an evaluation model)
+- Introduce a two-stage pipeline (fact extraction → scoring alignment) to reduce hallucinations and omissions
+- Move rubric/field definitions into a YAML config (similar to `latest_resumes/prompt_config.yaml`) to make evaluation dimensions configurable
